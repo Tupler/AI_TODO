@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>待办清单 · TODO</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <h1>待办清单</h1>
+      <p class="subtitle">添加任务，设置重复，轻松管理</p>
+    </header>
+
+    <section class="add-section">
+      <form id="add-form" class="add-form">
+        <input type="text" id="task-title" placeholder="输入新任务..." maxlength="256" autocomplete="off">
+        <input type="date" id="task-due" title="截止日期（可选）">
+        <select id="task-recurrence" title="重复">
+          <option value="none">不重复</option>
+          <option value="daily">每天</option>
+          <option value="weekly">每周</option>
+          <option value="monthly">每月</option>
+        </select>
+        <button type="submit">添加</button>
+      </form>
+      <p id="add-error" class="error-msg"></p>
+    </section>
+
+    <section class="toolbar">
+      <div class="date-wrap">
+        <label for="view-date">查看日期</label>
+        <input type="date" id="view-date" title="选择要查看的日期">
+      </div>
+      <div class="filters">
+        <button type="button" class="filter-btn active" data-filter="all">全部</button>
+        <button type="button" class="filter-btn" data-filter="active">未完成</button>
+        <button type="button" class="filter-btn" data-filter="completed">已完成</button>
+      </div>
+      <div class="search-wrap">
+        <input type="text" id="search" placeholder="搜索任务..." autocomplete="off">
+      </div>
+      <div class="batch-actions">
+        <button type="button" id="batch-delete" class="btn-secondary" disabled>删除选中</button>
+        <button type="button" id="clear-completed" class="btn-secondary">清除已完成</button>
+      </div>
+    </section>
+
+    <ul id="task-list" class="task-list"></ul>
+
+    <p id="empty-hint" class="empty-hint">暂无任务，在上方添加一条吧</p>
+    <p id="load-error" class="error-msg"></p>
+  </div>
+  <div id="reminder-toast-container" class="reminder-toast-container" aria-live="polite"></div>
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
