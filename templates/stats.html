@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>完成情况统计 · TODO</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <h1>完成情况统计</h1>
+      <p class="subtitle">按月查看每天完成任务数量</p>
+    </header>
+
+    <section class="stats-toolbar">
+      <div class="stats-month">
+        <label for="month-input">选择月份</label>
+        <input type="month" id="month-input">
+      </div>
+      <div class="stats-actions">
+        <button type="button" id="back-todo" class="btn-secondary" onclick="window.location.href='/'">返回 TODO</button>
+      </div>
+    </section>
+
+    <section class="stats-summary">
+      <p id="stats-summary-text" class="stats-summary-text"></p>
+    </section>
+
+    <section class="stats-calendar-wrap">
+      <div class="stats-calendar-header">
+        <span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span class="weekend">六</span><span class="weekend">日</span>
+      </div>
+      <div id="stats-calendar-body" class="stats-calendar-body"></div>
+    </section>
+
+    <p id="stats-error" class="error-msg"></p>
+    <p class="stats-tip">说明：每天数字表示该日完成的任务总数（包含重复任务和不重复任务）。</p>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/stats.js') }}"></script>
+</body>
+</html>
+
