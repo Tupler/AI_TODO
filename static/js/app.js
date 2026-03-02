@@ -4,6 +4,7 @@
   let searchQuery = '';
   let viewDate = getTodayStr();
   let tasks = [];
+  let userCode = localStorage.getItem('todoUserCode') || '';
 
   const $list = document.getElementById('task-list');
   const $addForm = document.getElementById('add-form');
@@ -18,6 +19,11 @@
   const $batchDelete = document.getElementById('batch-delete');
   const $clearCompleted = document.getElementById('clear-completed');
 
+  const $codeOverlay = document.getElementById('code-overlay');
+  const $codeInput = document.getElementById('code-input');
+  const $codeConfirm = document.getElementById('code-confirm');
+  const $codeError = document.getElementById('code-error');
+
   function getTodayStr() {
     const d = new Date();
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
@@ -30,8 +36,24 @@
     el.classList.toggle('hidden', !msg);
   }
 
+  function ensureUserCode() {
+    if (userCode) {
+      if ($codeOverlay) $codeOverlay.style.display = 'none';
+      return true;
+    }
+    if ($codeOverlay) $codeOverlay.style.display = 'flex';
+    return false;
+  }
+
   function fetchTasks() {
-    const params = new URLSearchParams({ filter: currentFilter, date: viewDate });
+    if (!ensureUserCode()) {
+      return Promise.resolve([]);
+    }
+    const params = new URLSearchParams({
+      filter: currentFilter,
+      date: viewDate,
+      user_code: userCode,
+    });
     return fetch(API + '?' + params.toString())
       .then((r) => r.json())
       .then((data) => {
@@ -123,7 +145,7 @@
       fetch(API + '/' + id, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ completed: completed, view_date: viewDate }),
+        body: JSON.stringify({ completed: completed, view_date: viewDate, user_code: userCode }),
       })
         .then((r) => r.json())
         .then(() => fetchTasks())
@@ -173,7 +195,7 @@
           fetch(API + '/' + numId, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title: val }),
+            body: JSON.stringify({ title: val, user_code: userCode }),
           })
             .then((r) => r.json())
             .then((task) => {
@@ -202,6 +224,7 @@
   $addForm.addEventListener('submit', (e) => {
     e.preventDefault();
     showError($addError, '');
+    if (!ensureUserCode()) return;
     const title = $taskTitle.value.trim();
     if (!title) {
       showError($addError, '请输入任务内容');
@@ -213,7 +236,12 @@
     fetch(API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: title, due_date: due, recurrence: recurrence }),
+      body: JSON.stringify({
+        user_code: userCode,
+        title: title,
+        due_date: due,
+        recurrence: recurrence,
+      }),
     })
       .then((r) => {
         if (!r.ok) return r.json().then((d) => Promise.reject(d.error || '添加失败'));
@@ -253,7 +281,7 @@
     fetch(API + '/batch-delete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids: ids }),
+      body: JSON.stringify({ ids: ids, user_code: userCode }),
     })
       .then(() => fetchTasks())
       .catch(() => {});
@@ -263,7 +291,7 @@
     fetch(API + '/clear-completed', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ view_date: viewDate }),
+      body: JSON.stringify({ view_date: viewDate, user_code: userCode }),
     }).then(() => fetchTasks()).catch(() => {});
   });
 
@@ -309,8 +337,9 @@
   }
 
   function runReminder() {
+    if (!userCode) return;
     const today = getTodayStr();
-    const params = new URLSearchParams({ filter: 'active', date: today });
+    const params = new URLSearchParams({ filter: 'active', date: today, user_code: userCode });
     fetch(API + '?' + params.toString())
       .then((r) => r.json())
       .then((list) => showReminderToast(list))
@@ -320,5 +349,32 @@
   setTimeout(runReminder, REMINDER_FIRST_DELAY_MS);
   setInterval(runReminder, REMINDER_INTERVAL_MS);
 
-  fetchTasks();
+  if ($codeConfirm) {
+    $codeConfirm.addEventListener('click', () => {
+      const code = ($codeInput.value || '').trim();
+      if (!code) {
+        showError($codeError, '识别码不能为空');
+        return;
+      }
+      userCode = code;
+      localStorage.setItem('todoUserCode', userCode);
+      showError($codeError, '');
+      if ($codeOverlay) $codeOverlay.style.display = 'none';
+      fetchTasks();
+      runReminder();
+    });
+  }
+
+  if ($codeInput) {
+    $codeInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        $codeConfirm && $codeConfirm.click();
+      }
+    });
+  }
+
+  if (ensureUserCode()) {
+    fetchTasks();
+  }
 })();

@@ -20,6 +20,8 @@ RECURRENCE_CHOICES = ['none', 'daily', 'weekly', 'monthly']
 class Task(db.Model):
     __tablename__ = 'tasks'
     id = db.Column(db.Integer, primary_key=True)
+    # 识别码，用来区分不同用户的 TODO 空间
+    user_code = db.Column(db.String(64), nullable=False, index=True)
     title = db.Column(db.String(256), nullable=False)
     due_date = db.Column(db.Date, nullable=True)
     recurrence = db.Column(db.String(20), default='none')
@@ -30,6 +32,7 @@ class Task(db.Model):
         completed = completed_override if completed_override is not None else self.completed
         return {
             'id': self.id,
+            'user_code': self.user_code,
             'title': self.title,
             'due_date': self.due_date.isoformat() if self.due_date else None,
             'recurrence': self.recurrence,
@@ -74,7 +77,12 @@ def task_applies_on_date(task, d):
 
 @app.route('/api/tasks', methods=['GET'])
 def list_tasks():
-    """列表：支持筛选 all | active | completed，以及按 date 显示当天任务（含重复规则）。"""
+    """列表：支持筛选 all | active | completed，以及按 date 显示当天任务（含重复规则），并按 user_code 隔离。"""
+    user_code = (request.args.get('user_code') or '').strip()
+    if not user_code:
+        # 没有识别码时直接返回空列表，前端会先要求输入识别码
+        return jsonify([])
+
     filter_type = request.args.get('filter', 'all')
     date_str = request.args.get('date')
     view_date = None
@@ -83,7 +91,8 @@ def list_tasks():
             view_date = datetime.strptime(date_str, '%Y-%m-%d').date()
         except (ValueError, TypeError):
             pass
-    q = Task.query.order_by(Task.created_at.desc())
+
+    q = Task.query.filter_by(user_code=user_code).order_by(Task.created_at.desc())
     tasks = q.all()
     if view_date is not None:
         tasks = [t for t in tasks if task_applies_on_date(t, view_date)]
@@ -92,10 +101,10 @@ def list_tasks():
     if view_date is not None and tasks:
         task_ids = [t.id for t in tasks]
         completed_for_date = {
-            c.task_id for c in
-            TaskCompletion.query.filter(
+            c.task_id
+            for c in TaskCompletion.query.filter(
                 TaskCompletion.task_id.in_(task_ids),
-                TaskCompletion.completed_date == view_date
+                TaskCompletion.completed_date == view_date,
             ).all()
         }
     result = []
@@ -115,6 +124,10 @@ def list_tasks():
 @app.route('/api/tasks', methods=['POST'])
 def add_task():
     data = request.get_json() or {}
+    user_code = (data.get('user_code') or '').strip()
+    if not user_code:
+        return jsonify({'error': '识别码不能为空'}), 400
+
     title = (data.get('title') or '').strip()
     if not title:
         return jsonify({'error': '标题不能为空'}), 400
@@ -127,7 +140,7 @@ def add_task():
     recurrence = data.get('recurrence', 'none')
     if recurrence not in RECURRENCE_CHOICES:
         recurrence = 'none'
-    task = Task(title=title, due_date=due, recurrence=recurrence)
+    task = Task(user_code=user_code, title=title, due_date=due, recurrence=recurrence)
     db.session.add(task)
     db.session.commit()
     return jsonify(task.to_dict()), 201
@@ -137,6 +150,11 @@ def add_task():
 def update_task(task_id):
     task = Task.query.get_or_404(task_id)
     data = request.get_json() or {}
+    # 简单的 user_code 校验，防止跨识别码修改
+    req_user_code = (data.get('user_code') or '').strip()
+    if req_user_code and task.user_code != req_user_code:
+        return jsonify({'error': 'not found'}), 404
+
     response_completed_override = None
     if 'title' in data:
         task.title = (data['title'] or '').strip() or task.title
@@ -177,6 +195,11 @@ def update_task(task_id):
 @app.route('/api/tasks/<int:task_id>', methods=['DELETE'])
 def delete_task(task_id):
     task = Task.query.get_or_404(task_id)
+    data = request.get_json(silent=True) or {}
+    req_user_code = (data.get('user_code') or '').strip() if isinstance(data, dict) else ''
+    if req_user_code and task.user_code != req_user_code:
+        return jsonify({'error': 'not found'}), 404
+
     TaskCompletion.query.filter_by(task_id=task_id).delete(synchronize_session=False)
     db.session.delete(task)
     db.session.commit()
@@ -187,10 +210,20 @@ def delete_task(task_id):
 def batch_delete():
     data = request.get_json() or {}
     ids = data.get('ids', [])
+    user_code = (data.get('user_code') or '').strip()
     if not ids:
         return jsonify({'error': '请选择要删除的任务'}), 400
-    TaskCompletion.query.filter(TaskCompletion.task_id.in_(ids)).delete(synchronize_session=False)
-    Task.query.filter(Task.id.in_(ids)).delete(synchronize_session=False)
+
+    # 只删除当前识别码下的任务
+    tasks = Task.query.filter(Task.id.in_(ids))
+    if user_code:
+        tasks = tasks.filter_by(user_code=user_code)
+    task_ids = [t.id for t in tasks.all()]
+    if not task_ids:
+        return '', 204
+
+    TaskCompletion.query.filter(TaskCompletion.task_id.in_(task_ids)).delete(synchronize_session=False)
+    Task.query.filter(Task.id.in_(task_ids)).delete(synchronize_session=False)
     db.session.commit()
     return '', 204
 
@@ -198,14 +231,29 @@ def batch_delete():
 @app.route('/api/tasks/clear-completed', methods=['POST'])
 def clear_completed():
     data = request.get_json() or {}
+    user_code = (data.get('user_code') or '').strip()
     date_str = data.get('view_date') or data.get('date')
     if date_str:
         try:
             d = datetime.strptime(date_str, '%Y-%m-%d').date()
-            TaskCompletion.query.filter_by(completed_date=d).delete(synchronize_session=False)
+            q = TaskCompletion.query.filter_by(completed_date=d)
+            if user_code:
+                # 先找出该 user_code 的任务，再按任务 id 限制
+                user_task_ids = [
+                    t.id for t in Task.query.filter_by(user_code=user_code).all()
+                ]
+                if user_task_ids:
+                    q = q.filter(TaskCompletion.task_id.in_(user_task_ids))
+                else:
+                    q = q.filter(False)
+            q.delete(synchronize_session=False)
         except (ValueError, TypeError):
             pass
-    Task.query.filter(Task.recurrence == 'none', Task.completed == True).delete(synchronize_session=False)
+    # 非重复任务：只清除当前识别码下已完成的
+    q_tasks = Task.query.filter(Task.recurrence == 'none', Task.completed == True)
+    if user_code:
+        q_tasks = q_tasks.filter_by(user_code=user_code)
+    q_tasks.delete(synchronize_session=False)
     db.session.commit()
     return '', 204
 

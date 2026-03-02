@@ -7,6 +7,16 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
+  <div id="code-overlay" class="code-overlay">
+    <div class="code-dialog">
+      <h2>请输入识别码</h2>
+      <p class="code-tip">同一个识别码就是你的个人 TODO 空间，可以自己起一个简单的代号。</p>
+      <input type="text" id="code-input" maxlength="32" placeholder="例如：my-todo-001">
+      <p id="code-error" class="error-msg"></p>
+      <button type="button" id="code-confirm">进入我的 TODO</button>
+    </div>
+  </div>
+
   <div class="app">
     <header class="header">
       <h1>待办清单</h1>
